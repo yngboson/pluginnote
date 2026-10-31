@@ -387,3 +387,46 @@ fn mohr_principal_pure_shear_gives_45_degrees() {
     near(readout(&r[1], "θp (deg)"), 45.0);
     near(readout(&r[1], "σ1"), 50.0);
 }
+
+#[test]
+fn huge_formula_is_rejected_not_a_stack_overflow() {
+    let src = format!(r#"{{"id":"d","version":"1","apiVersion":"0.1","draw":[{{"op":"circle","cx":"0","cy":"0","r":"{}1"}}]}}"#, "-".repeat(200_000));
+    let mut h = JsHost::new();
+    h.load(&src).unwrap();
+    assert!(matches!(h.render_plugin("d", &Map::new(), &Map::new()), Err(PluginError::Render(_))));
+}
+
+#[test]
+fn unsafe_id_and_silent_overwrite_are_rejected() {
+    let with = |id: &str, v: &str| format!("export default definePlugin({{ id:'{id}', version:'{v}', apiVersion:'0.1', render(){{}} }});");
+    let mut h = JsHost::new();
+    assert!(matches!(h.load(&with("../x", "1")), Err(PluginError::Manifest(_))));
+    assert!(matches!(h.load(&with("a", "1/2")), Err(PluginError::Manifest(_))));
+    h.load(&with("a", "1")).unwrap();
+    h.load(&with("a", "1")).unwrap(); // 같은 버전 재로드는 허용
+    assert!(matches!(h.load(&with("a", "2")), Err(PluginError::Manifest(_))));
+}
+
+#[test]
+fn timed_out_input_fails_fast_the_second_time() {
+    let mut h = JsHost::new().with_limits(Limits { time_per_call: Duration::from_millis(100), ..Limits::default() });
+    h.load(&plugin_src("while(true){}", "[]")).unwrap();
+    assert!(matches!(h.render_plugin("t", &Map::new(), &Map::new()), Err(PluginError::Timeout(_))));
+    let t = std::time::Instant::now();
+    assert!(matches!(h.render_plugin("t", &Map::new(), &Map::new()), Err(PluginError::Timeout(_))));
+    assert!(t.elapsed() < Duration::from_millis(50));
+}
+
+#[test]
+fn document_without_layers_gets_a_default_layer() {
+    let d = Document::from_json(r#"{"format":"pluginnote","format_version":1}"#).unwrap();
+    assert_eq!(d.layers.len(), 1);
+}
+
+#[test]
+fn svg_attributes_are_escaped() {
+    let style = note_core::Style { stroke: "\"/><script>".into(), width: 1.0, dash: None, fill: Some("\"/><b>".into()) };
+    let out = note_core::PluginOutput { draws: vec![DrawCmd::Circle { c: [0.0, 0.0], r: 1.0, style }], ..Default::default() };
+    let svg = note_core::svg::to_svg(&[note_core::RenderedObject { id: "x".into(), output: out }]);
+    assert!(!svg.contains("<script>") && !svg.contains("<b>"));
+}

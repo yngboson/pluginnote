@@ -36,11 +36,11 @@ fn extend(b: &mut Bbox, d: &DrawCmd) {
 }
 
 fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 fn attrs(s: &crate::draw::Style, fill_default: &str) -> String {
-    let mut a = format!("stroke=\"{}\" stroke-width=\"{}\" fill=\"{}\"", esc(&s.stroke), s.width, s.fill.as_deref().unwrap_or(fill_default));
+    let mut a = format!("stroke=\"{}\" stroke-width=\"{}\" fill=\"{}\"", esc(&s.stroke), s.width, esc(s.fill.as_deref().unwrap_or(fill_default)));
     if let Some(d) = &s.dash {
         a += &format!(" stroke-dasharray=\"{}\"", d.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" "));
     }

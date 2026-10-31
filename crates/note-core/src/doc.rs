@@ -7,6 +7,7 @@ use crate::draw::{DrawCmd, PluginOutput, Pt, Style, Xform};
 use crate::error::{CoreError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub const FORMAT_VERSION: u32 = 1;
 const FORMAT_NAME: &str = "pluginnote";
@@ -25,7 +26,8 @@ pub struct Layer {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
-    pub strokes: Vec<Stroke>,
+    /// Arc 로 공유해 되돌리기용 문서 복사가 획 데이터를 복사하지 않게 한다
+    pub strokes: Vec<Arc<Stroke>>,
     #[serde(default)]
     pub objects: Vec<Object>,
 }
@@ -115,12 +117,16 @@ impl Document {
     }
 
     pub fn from_json(s: &str) -> Result<Self> {
-        let d: Document = serde_json::from_str(s)?;
+        let mut d: Document = serde_json::from_str(s)?;
         if d.format != FORMAT_NAME {
             return Err(CoreError::Invalid(format!("format 이 '{}' 이 아님: {}", FORMAT_NAME, d.format)));
         }
         if d.format_version > FORMAT_VERSION {
             return Err(CoreError::UnsupportedFormat(d.format_version, FORMAT_VERSION));
+        }
+        // 코어/FFI 가 layers[0] 을 전제로 하므로 빈 문서에도 기본 레이어를 둔다
+        if d.layers.is_empty() {
+            d.layers = Document::default().layers;
         }
         Ok(d)
     }

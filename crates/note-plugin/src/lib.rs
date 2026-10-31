@@ -3,9 +3,6 @@
 //! - 플러그인마다 독립 Runtime/Context (전역 오염 차단)
 //! - 메모리/스택/실행시간 상한, 초과 시 해당 플러그인 호출만 실패
 //! - 기본 무권한: manifest 의 permissions 는 호스트가 허용한 것만 통과
-//!
-//! TODO(단계 3 후반): 플러그인 연산을 별도 스레드로 옮겨 필기 스레드와 분리한다.
-//! 지금은 동기 호출이며, 호스트 API(`render`)는 스레드 이동 시에도 그대로 유지되도록 `&mut self` 만 요구한다.
 
 mod declarative;
 mod manifest;
@@ -75,6 +72,8 @@ pub struct JsHost {
     plugins: HashMap<String, Loaded>,
     granted: BTreeSet<String>,
     limits: Limits,
+    /// 시간 초과한 (플러그인, 입력). 같은 입력으로 매 프레임 200ms 를 또 쓰지 않도록 즉시 실패시킨다
+    timed_out: BTreeSet<String>,
 }
 
 impl Default for JsHost {
@@ -85,7 +84,7 @@ impl Default for JsHost {
 
 impl JsHost {
     pub fn new() -> Self {
-        JsHost { plugins: HashMap::new(), granted: BTreeSet::new(), limits: Limits::default() }
+        JsHost { plugins: HashMap::new(), granted: BTreeSet::new(), limits: Limits::default(), timed_out: BTreeSet::new() }
     }
 
     pub fn with_limits(mut self, l: Limits) -> Self {
@@ -115,6 +114,15 @@ impl JsHost {
     fn check_manifest(&self, manifest: &Manifest) -> Result<(), PluginError> {
         if manifest.id.is_empty() || manifest.version.is_empty() {
             return Err(PluginError::Manifest("id 와 version 은 필수".into()));
+        }
+        // id/version 은 레지스트리 폴더 이름으로 쓰이므로 경로 문자를 막는다
+        let safe = |s: &str| !s.starts_with('.') && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
+        if !safe(&manifest.id) || !safe(&manifest.version) {
+            return Err(PluginError::Manifest("id/version 은 영문·숫자·-_. 만 허용".into()));
+        }
+        // 설치된 플러그인을 다른 버전이 조용히 덮어쓰지 못하게 한다(같은 버전 재로드는 허용)
+        if self.plugins.get(&manifest.id).is_some_and(|p| p.manifest.version != manifest.version) {
+            return Err(PluginError::Manifest(format!("이미 설치된 id: {} (버전이 다름)", manifest.id)));
         }
         if !manifest.api_compatible() {
             return Err(PluginError::ApiVersion { plugin: manifest.api_version.clone(), host: API_VERSION.into() });
@@ -184,6 +192,10 @@ impl JsHost {
         };
         let json = Value::Object(resolved).to_string();
         let refs_json = Value::Object(refs.clone()).to_string();
+        let key = format!("{id}\0{json}\0{refs_json}");
+        if self.timed_out.contains(&key) {
+            return Err(PluginError::Timeout(budget));
+        }
         *deadline.lock().unwrap() = Some(Instant::now() + budget);
         let started = Instant::now();
         let res = rt_ctx.with(|c| -> Result<String, String> {
@@ -193,7 +205,13 @@ impl JsHost {
         *deadline.lock().unwrap() = None;
         match res {
             Ok(s) => serde_json::from_str(&s).map_err(|e| PluginError::Render(e.to_string())),
-            Err(_) if started.elapsed() >= budget => Err(PluginError::Timeout(budget)),
+            Err(_) if started.elapsed() >= budget => {
+                if self.timed_out.len() >= 256 {
+                    self.timed_out.clear();
+                }
+                self.timed_out.insert(key);
+                Err(PluginError::Timeout(budget))
+            }
             Err(e) => Err(PluginError::Render(e)),
         }
     }

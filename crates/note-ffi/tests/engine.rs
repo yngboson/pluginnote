@@ -146,3 +146,13 @@ fn strokes_are_world_data_erasable_and_undoable() {
     // 문서 저장에 획이 월드 좌표로 들어간다
     assert!(e.document_json().unwrap().contains("\"strokes\""));
 }
+
+#[test]
+fn empty_layers_file_can_be_opened_and_drawn_on() {
+    let e = NoteEngine::new(vec![]);
+    e.load_document(r#"{"format":"pluginnote","format_version":1}"#.into()).unwrap();
+    e.add_stroke(vec![0.0, 0.0, 1.0, 1.0, 1.0, 1.0], "#000".into(), 2.0).unwrap();
+    assert_eq!(frame(&e)["stroke_count"], 1);
+    assert!(e.undo());
+    assert_eq!(frame(&e)["strokes"].as_array().unwrap().len(), 0); // undo 후 캐시가 갱신됨
+}

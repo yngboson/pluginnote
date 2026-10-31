@@ -17,7 +17,7 @@ Rust 백엔드(코어/플러그인 호스트/레지스트리/FFI/CLI)는 CI(ubun
 사전 준비: Xcode, `brew install xcodegen`, `rustup` 이 있어야 한다. 없으면 사용자에게 설치를 안내한다.
 
 1. 브랜치 확인: `git checkout claude/magical-archimedes-h5usyx && git pull`
-2. 백엔드 회귀 확인: `cargo test --workspace` (38개 이상 통과해야 정상)
+2. 백엔드 회귀 확인: `cargo test --workspace` (47개 이상 통과해야 정상)
 3. iOS 빌드: `ios/build-ios.sh` (macOS 전용). **실패하면 에러를 읽고 고친다.** 아래 "이미 겪은 문제"를 먼저 본다.
 4. `cd ios && xcodegen` 으로 프로젝트 생성 → `xcodebuild build -project PluginNote.xcodeproj -scheme PluginNote -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`
    (2026-11-01 Mac 로컬에서 3~5단계 완료: 빌드 스크립트의 `Generated/` 폴더 누락만 고쳤고 Swift 는 무수정 통과. 6단계 체크리스트가 남음)

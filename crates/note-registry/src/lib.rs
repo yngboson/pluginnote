@@ -130,7 +130,10 @@ impl Registry {
     }
 
     fn save(&self, idx: &Index) -> Result<()> {
-        std::fs::write(self.root.join("index.json"), serde_json::to_string_pretty(idx)?)?;
+        // 쓰는 도중 중단돼도 index.json 이 깨지지 않도록 임시 파일에 쓰고 교체한다
+        let tmp = self.root.join("index.json.tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(idx)?)?;
+        std::fs::rename(tmp, self.root.join("index.json"))?;
         Ok(())
     }
 
@@ -286,13 +289,11 @@ pub fn check_plugin(source: &str) -> Result<(Manifest, usize, String)> {
         if i == 0 {
             // 미리보기는 단일 객체 문서로 렌더. 연결이 있는 플러그인은 가짜 대상 객체를 함께 넣는다.
             let mut doc = Document::default();
-            let mut host2 = JsHost::new();
-            host2.load(source).map_err(|e| fail(e.to_string()))?;
             let mut obj = Object::new("preview", &m.id);
             obj.params = params.clone();
             doc.layers[0].objects.push(obj);
             if refs.is_empty() {
-                if let Ok(r) = doc.render(&mut host2) {
+                if let Ok(r) = doc.render(&mut host) {
                     preview = to_svg(&r);
                 }
             } else {

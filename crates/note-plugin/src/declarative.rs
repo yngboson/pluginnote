@@ -129,6 +129,10 @@ fn op_to_cmd(op: &Op, env: &HashMap<String, f64>) -> Result<DrawCmd, String> {
 
 pub fn eval(src: &str, env: &HashMap<String, f64>) -> Result<f64, String> {
     let toks = tokenize(src)?;
+    // unary/^ 는 재귀하므로 토큰 수로 깊이를 제한한다(스택 오버플로 방지)
+    if toks.len() > 1000 {
+        return Err("수식이 너무 김".into());
+    }
     let mut p = Parser { t: &toks, i: 0, env, depth: 0 };
     let v = p.expr()?;
     if p.i != toks.len() {

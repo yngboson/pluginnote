@@ -7,7 +7,7 @@
 use note_core::{Document, Object, Stroke};
 use note_plugin::{Limits, WorkerHost};
 use serde_json::{json, Map, Value};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 uniffi::setup_scaffolding!();
 
@@ -28,6 +28,8 @@ struct Inner {
     host: WorkerHost,
     undo: Vec<Document>,
     redo: Vec<Document>,
+    /// render() 가 매 프레임 전 획을 다시 직렬화하지 않도록 캐시. 획이 바뀌는 곳에서 비운다
+    strokes_json: Option<String>,
 }
 
 impl Inner {
@@ -52,7 +54,7 @@ impl NoteEngine {
     #[uniffi::constructor]
     pub fn new(granted_permissions: Vec<String>) -> Self {
         let g: Vec<&str> = granted_permissions.iter().map(String::as_str).collect();
-        NoteEngine { inner: Mutex::new(Inner { doc: Document::default(), host: WorkerHost::spawn(Limits::default(), &g), undo: vec![], redo: vec![] }) }
+        NoteEngine { inner: Mutex::new(Inner { doc: Document::default(), host: WorkerHost::spawn(Limits::default(), &g), undo: vec![], redo: vec![], strokes_json: None }) }
     }
 
     /// 플러그인 소스(JS 또는 선언형 JSON)를 설치. manifest JSON 반환 → UI 가 권한/파라미터 편집 UI 구성에 사용.
@@ -73,6 +75,7 @@ impl NoteEngine {
         g.doc = d;
         g.undo.clear();
         g.redo.clear();
+        g.strokes_json = None;
         Ok(())
     }
 
@@ -121,6 +124,7 @@ impl NoteEngine {
             Some(prev) => {
                 let cur = std::mem::replace(&mut g.doc, prev);
                 g.redo.push(cur);
+                g.strokes_json = None;
                 true
             }
             None => false,
@@ -133,6 +137,7 @@ impl NoteEngine {
             Some(next) => {
                 let cur = std::mem::replace(&mut g.doc, next);
                 g.undo.push(cur);
+                g.strokes_json = None;
                 true
             }
             None => false,
@@ -179,6 +184,7 @@ impl NoteEngine {
         }
         g.checkpoint();
         g.doc.layers[0].strokes.remove(i);
+        g.strokes_json = None;
         true
     }
 
@@ -191,7 +197,8 @@ impl NoteEngine {
         let style = note_core::Style { stroke: stroke_color, width, dash: None, fill: None };
         let mut g = self.inner.lock().unwrap();
         g.checkpoint();
-        g.doc.layers[0].strokes.push(Stroke { points, style });
+        g.doc.layers[0].strokes.push(Arc::new(Stroke { points, style }));
+        g.strokes_json = None;
         Ok(())
     }
 
@@ -199,7 +206,7 @@ impl NoteEngine {
     /// { objects: [{id, ok, error?, draws, attachments, snaps, readouts}] }
     pub fn render(&self) -> String {
         let mut g = self.inner.lock().unwrap();
-        let Inner { doc, host, .. } = &mut *g;
+        let Inner { doc, host, strokes_json, .. } = &mut *g;
         let mut out = vec![];
         for obj in doc.layers.iter().flat_map(|l| l.objects.iter()) {
             match doc.render_one(obj, host) {
@@ -207,8 +214,8 @@ impl NoteEngine {
                 Err(e) => out.push(json!({"id": obj.id, "ok": false, "error": e.to_string()})),
             }
         }
-        let strokes: Vec<_> = doc.layers[0].strokes.iter().map(|s| json!({"points": s.points, "style": s.style})).collect();
-        json!({"objects": out, "stroke_count": strokes.len(), "strokes": strokes}).to_string()
+        let strokes = strokes_json.get_or_insert_with(|| serde_json::to_string(&doc.layers[0].strokes).unwrap_or_else(|_| "[]".into()));
+        format!(r#"{{"objects":{},"stroke_count":{},"strokes":{}}}"#, Value::Array(out), doc.layers[0].strokes.len(), strokes)
     }
 
     pub fn export_svg(&self) -> Result<String, NoteError> {
