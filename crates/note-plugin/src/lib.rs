@@ -8,8 +8,11 @@
 //! 지금은 동기 호출이며, 호스트 API(`render`)는 스레드 이동 시에도 그대로 유지되도록 `&mut self` 만 요구한다.
 
 mod manifest;
+mod worker;
 
-pub use manifest::{Example, Manifest, ParamSpec, API_VERSION};
+pub use worker::WorkerHost;
+
+pub use manifest::{Example, Manifest, ParamSpec, RefSpec, API_VERSION};
 
 use note_core::{CoreError, PluginOutput, PluginRuntime};
 use rquickjs::{CatchResultExt, Context, Function, Module, Runtime};
@@ -129,16 +132,18 @@ impl JsHost {
         Ok(manifest)
     }
 
-    pub fn render_plugin(&mut self, id: &str, params: &Map<String, Value>) -> Result<PluginOutput, PluginError> {
+    pub fn render_plugin(&mut self, id: &str, params: &Map<String, Value>, refs: &Map<String, Value>) -> Result<PluginOutput, PluginError> {
         let budget = self.limits.time_per_call;
         let p = self.plugins.get(id).ok_or_else(|| PluginError::Render(format!("로드되지 않은 플러그인: {id}")))?;
         let resolved = p.manifest.resolve_params(params).map_err(PluginError::Params)?;
+        p.manifest.check_refs(refs).map_err(PluginError::Params)?;
         let json = Value::Object(resolved).to_string();
+        let refs_json = Value::Object(refs.clone()).to_string();
         *p.deadline.lock().unwrap() = Some(Instant::now() + budget);
         let started = Instant::now();
         let res = p.ctx.with(|c| -> Result<String, String> {
             let f: Function = c.globals().get("__render").map_err(|e| e.to_string())?;
-            f.call::<_, String>((json,)).catch(&c).map_err(|e| e.to_string())
+            f.call::<_, String>((json, refs_json)).catch(&c).map_err(|e| e.to_string())
         });
         *p.deadline.lock().unwrap() = None;
         match res {
@@ -153,7 +158,7 @@ impl PluginRuntime for JsHost {
     fn has(&self, ty: &str) -> bool {
         self.plugins.contains_key(ty)
     }
-    fn render(&mut self, ty: &str, params: &Map<String, Value>) -> note_core::Result<PluginOutput> {
-        self.render_plugin(ty, params).map_err(|e| CoreError::Plugin(e.to_string()))
+    fn render(&mut self, ty: &str, params: &Map<String, Value>, refs: &Map<String, Value>) -> note_core::Result<PluginOutput> {
+        self.render_plugin(ty, params, refs).map_err(|e| CoreError::Plugin(e.to_string()))
     }
 }

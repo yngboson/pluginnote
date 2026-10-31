@@ -62,14 +62,21 @@ pub struct Object {
     pub scale: f64,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub rotation: f64,
+    /// 다른 객체에 대한 연결: 이름 → 객체 id. 대상이 바뀌면 이 객체가 재계산된다(예: SFD/BMD → 보).
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub refs: Map<String, Value>,
 }
 
 impl Object {
     pub fn new(id: &str, ty: &str) -> Self {
-        Object { id: id.into(), ty: ty.into(), params: Map::new(), origin: [0.0, 0.0], scale: 1.0, rotation: 0.0 }
+        Object { id: id.into(), ty: ty.into(), params: Map::new(), origin: [0.0, 0.0], scale: 1.0, rotation: 0.0, refs: Map::new() }
     }
     pub fn with_param(mut self, k: &str, v: Value) -> Self {
         self.params.insert(k.into(), v);
+        self
+    }
+    pub fn with_ref(mut self, name: &str, id: &str) -> Self {
+        self.refs.insert(name.into(), Value::String(id.into()));
         self
     }
     pub fn at(mut self, x: f64, y: f64) -> Self {
@@ -85,7 +92,8 @@ impl Object {
 pub trait PluginRuntime {
     fn has(&self, ty: &str) -> bool;
     /// params 는 누락 값이 기본값으로 채워지고 검증된 상태로 렌더된다. 출력은 객체 로컬 좌표.
-    fn render(&mut self, ty: &str, params: &Map<String, Value>) -> Result<PluginOutput>;
+    /// `refs`: 연결 이름 → {id, type, params, offset}. offset 은 대상 원점 − 자기 원점(자기 로컬 좌표 기준 위치 정렬용).
+    fn render(&mut self, ty: &str, params: &Map<String, Value>, refs: &Map<String, Value>) -> Result<PluginOutput>;
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +125,26 @@ impl Document {
         Ok(d)
     }
 
+    pub fn object(&self, id: &str) -> Option<&Object> {
+        self.layers.iter().flat_map(|l| l.objects.iter()).find(|o| o.id == id)
+    }
+
+    fn resolve_refs(&self, obj: &Object) -> Result<Map<String, Value>> {
+        let mut out = Map::new();
+        for (name, target) in &obj.refs {
+            let tid = target.as_str().ok_or_else(|| CoreError::Invalid(format!("{}.refs.{name} 은 객체 id 문자열이어야 함", obj.id)))?;
+            let t = self.object(tid).ok_or_else(|| CoreError::Invalid(format!("{}.refs.{name}: 객체 '{tid}' 없음", obj.id)))?;
+            out.insert(
+                name.clone(),
+                serde_json::json!({
+                    "id": t.id, "type": t.ty, "params": t.params,
+                    "offset": [t.origin[0] - obj.origin[0], t.origin[1] - obj.origin[1]],
+                }),
+            );
+        }
+        Ok(out)
+    }
+
     pub fn object_mut(&mut self, id: &str) -> Option<&mut Object> {
         self.layers.iter_mut().flat_map(|l| l.objects.iter_mut()).find(|o| o.id == id)
     }
@@ -128,7 +156,7 @@ impl Document {
             let local = if let Some(o) = builtin(obj)? {
                 o
             } else if rt.has(&obj.ty) {
-                rt.render(&obj.ty, &obj.params)?
+                rt.render(&obj.ty, &obj.params, &self.resolve_refs(obj)?)?
             } else {
                 return Err(CoreError::UnknownType(obj.ty.clone()));
             };

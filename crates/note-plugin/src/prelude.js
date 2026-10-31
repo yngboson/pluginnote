@@ -23,8 +23,9 @@
     if (typeof v !== 'number' || !isFinite(v)) throw new Error('invalid number for ' + what + ': ' + v);
     return v;
   }
-  function makeCtx(sink) {
+  function makeCtx(sink, refs) {
     const ctx = {
+      refs: refs || {},
       line(a, b, s)   { sink.draws.push({ kind: 'line', from: pt(a, 'line'), to: pt(b, 'line'), style: style(s) }); },
       arrow(a, b, s)  { sink.draws.push({ kind: 'arrow', from: pt(a, 'arrow'), to: pt(b, 'arrow'), style: style(s) }); },
       circle(o, s)    { sink.draws.push({ kind: 'circle', c: pt([o.cx, o.cy], 'circle'), r: num(o.r, 'circle.r'), style: style(s) }); },
@@ -36,7 +37,7 @@
       // 부속 요소: 이름 붙은 하위 컨텍스트. 객체가 움직이거나 값이 바뀌면 함께 갱신된다.
       ctx.attach = function (name, fn) {
         const sub = { draws: [], top: false };
-        fn(makeCtx(sub));
+        fn(makeCtx(sub, refs));
         sink.attachments.push({ name: String(name), draws: sub.draws });
       };
       ctx.snap = function (name, at) { sink.snaps.push({ name: String(name), at: pt(at, 'snap') }); };
@@ -60,12 +61,13 @@
       name: s.name, description: s.description, tags: s.tags, license: s.license,
       permissions: s.permissions || [],
       params: s.params || {},
+      refs: s.refs || {},
       examples: s.examples || [],
     });
   };
-  g.__render = function (paramsJson) {
+  g.__render = function (paramsJson, refsJson) {
     const sink = { draws: [], attachments: [], snaps: [], readouts: [], top: true };
-    g.__plugin.render(JSON.parse(paramsJson), makeCtx(sink));
+    g.__plugin.render(JSON.parse(paramsJson), makeCtx(sink, JSON.parse(refsJson || '{}')));
     return JSON.stringify({ draws: sink.draws, attachments: sink.attachments, snaps: sink.snaps, readouts: sink.readouts });
   };
 })(globalThis);

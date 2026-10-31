@@ -40,10 +40,23 @@ fn run() -> Result<(), String> {
             }
             for f in &files {
                 let m = host.load(&read(f)?).map_err(|e| format!("{f}: {e}"))?;
-                let mut cases = vec![("(기본값)".to_string(), Map::new())];
-                cases.extend(m.examples.iter().map(|e| (e.name.clone().unwrap_or_else(|| "예제".into()), e.params.clone())));
-                for (name, p) in cases {
-                    let o = host.render_plugin(&m.id, &p).map_err(|e| format!("{f} [{name}]: {e}"))?;
+                let mut cases: Vec<(String, Map<String, Value>, Map<String, Value>)> = vec![];
+                if m.refs.is_empty() {
+                    cases.push(("(기본값)".into(), Map::new(), Map::new()));
+                } else if m.examples.iter().all(|e| e.refs.is_empty()) {
+                    return Err(format!("{f}: 연결(refs)이 필요한 플러그인은 refs 가 있는 예제가 최소 1개 필요"));
+                }
+                cases.extend(m.examples.iter().map(|e| {
+                    let mut refs = e.refs.clone();
+                    for r in refs.values_mut() {
+                        if let Some(o) = r.as_object_mut() {
+                            o.entry("offset").or_insert(serde_json::json!([0.0, 0.0]));
+                        }
+                    }
+                    (e.name.clone().unwrap_or_else(|| "예제".into()), e.params.clone(), refs)
+                }));
+                for (name, p, refs) in cases {
+                    let o = host.render_plugin(&m.id, &p, &refs).map_err(|e| format!("{f} [{name}]: {e}"))?;
                     println!("ok  {} v{} [{}] draws={} attach={} snaps={}", m.id, m.version, name, o.draws.len(), o.attachments.len(), o.snaps.len());
                 }
             }

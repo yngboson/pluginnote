@@ -23,7 +23,7 @@ fn circle_of(o: &note_core::PluginOutput) -> ([f64; 2], f64) {
 fn mohr_center_and_radius() {
     let mut h = JsHost::new();
     h.load(MOHR).unwrap();
-    let o = h.render_plugin("mohr-circle", &params(json!({"sx": 80, "sy": -40, "txy": 30}))).unwrap();
+    let o = h.render_plugin("mohr-circle", &params(json!({"sx": 80, "sy": -40, "txy": 30})), &Map::new()).unwrap();
     let (c, r) = circle_of(&o);
     near(c[0], 20.0);
     near(c[1], 0.0);
@@ -34,7 +34,7 @@ fn mohr_center_and_radius() {
 fn mohr_has_vertical_and_horizontal_guides_through_center() {
     let mut h = JsHost::new();
     h.load(MOHR).unwrap();
-    let o = h.render_plugin("mohr-circle", &params(json!({"sx": 80, "sy": -40, "txy": 30}))).unwrap();
+    let o = h.render_plugin("mohr-circle", &params(json!({"sx": 80, "sy": -40, "txy": 30})), &Map::new()).unwrap();
     let names: Vec<_> = o.attachments.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, ["center-guide-v", "center-guide-h"]);
     match &o.attachments[0].draws[0] {
@@ -110,7 +110,7 @@ fn unknown_type_errors() {
 fn second_plugin_type_works_with_same_api() {
     let mut h = JsHost::new();
     h.load(FBD).unwrap();
-    let o = h.render_plugin("fbd-arrow", &params(json!({"magnitude": 20, "angle": 90, "scale": 0.5}))).unwrap();
+    let o = h.render_plugin("fbd-arrow", &params(json!({"magnitude": 20, "angle": 90, "scale": 0.5})), &Map::new()).unwrap();
     near(o.readouts[0].value.as_f64().unwrap(), 0.0 + 20.0 * (90f64.to_radians()).cos());
     near(o.readouts[1].value.as_f64().unwrap(), 20.0);
 }
@@ -119,8 +119,8 @@ fn second_plugin_type_works_with_same_api() {
 fn param_validation() {
     let mut h = JsHost::new();
     h.load(FBD).unwrap();
-    assert!(matches!(h.render_plugin("fbd-arrow", &params(json!({"magnitude": -1}))), Err(PluginError::Params(_))));
-    assert!(matches!(h.render_plugin("fbd-arrow", &params(json!({"typo": 1}))), Err(PluginError::Params(_))));
+    assert!(matches!(h.render_plugin("fbd-arrow", &params(json!({"magnitude": -1})), &Map::new()), Err(PluginError::Params(_))));
+    assert!(matches!(h.render_plugin("fbd-arrow", &params(json!({"typo": 1})), &Map::new()), Err(PluginError::Params(_))));
 }
 
 fn plugin_src(body: &str, perms: &str) -> String {
@@ -140,7 +140,7 @@ fn undeclared_permission_is_denied_by_default() {
 fn sandbox_has_no_io_globals() {
     let mut h = JsHost::new();
     h.load(&plugin_src("ctx.text([0,0], [typeof fetch, typeof require, typeof process, typeof std, typeof os, typeof setTimeout, typeof XMLHttpRequest].join(','))", "[]")).unwrap();
-    let o = h.render_plugin("t", &Map::new()).unwrap();
+    let o = h.render_plugin("t", &Map::new(), &Map::new()).unwrap();
     match &o.draws[0] {
         DrawCmd::Text { text, .. } => assert_eq!(text, "undefined,undefined,undefined,undefined,undefined,undefined,undefined"),
         d => panic!("{d:?}"),
@@ -151,17 +151,17 @@ fn sandbox_has_no_io_globals() {
 fn infinite_loop_is_interrupted() {
     let mut h = JsHost::new().with_limits(Limits { time_per_call: Duration::from_millis(50), ..Limits::default() });
     h.load(&plugin_src("while(true){}", "[]")).unwrap();
-    assert!(matches!(h.render_plugin("t", &Map::new()), Err(PluginError::Timeout(_))));
+    assert!(matches!(h.render_plugin("t", &Map::new(), &Map::new()), Err(PluginError::Timeout(_))));
     // 중단 후에도 호스트는 살아 있다
     h.load(MOHR).unwrap();
-    assert!(h.render_plugin("mohr-circle", &Map::new()).is_ok());
+    assert!(h.render_plugin("mohr-circle", &Map::new(), &Map::new()).is_ok());
 }
 
 #[test]
 fn memory_bomb_fails_without_crashing_host() {
     let mut h = JsHost::new().with_limits(Limits { memory_bytes: 4 << 20, time_per_call: Duration::from_secs(2), ..Limits::default() });
     h.load(&plugin_src("const a=[]; for(;;) a.push(new Array(10000).fill(1));", "[]")).unwrap();
-    assert!(h.render_plugin("t", &Map::new()).is_err());
+    assert!(h.render_plugin("t", &Map::new(), &Map::new()).is_err());
 }
 
 #[test]
@@ -174,5 +174,115 @@ fn incompatible_api_major_is_rejected() {
 fn bad_point_gives_render_error_not_panic() {
     let mut h = JsHost::new();
     h.load(&plugin_src("ctx.line([NaN,0],[1,1])", "[]")).unwrap();
-    assert!(matches!(h.render_plugin("t", &Map::new()), Err(PluginError::Render(_))));
+    assert!(matches!(h.render_plugin("t", &Map::new(), &Map::new()), Err(PluginError::Render(_))));
+}
+
+#[test]
+fn worker_host_renders_off_thread_and_survives_timeout() {
+    use note_plugin::WorkerHost;
+    let mut w = WorkerHost::spawn(Limits { time_per_call: Duration::from_millis(50), ..Limits::default() }, &[]);
+    w.load(MOHR).unwrap();
+    w.load(&plugin_src("while(true){}", "[]")).unwrap();
+    let main_thread = std::thread::current().id();
+    let rx = w.render_async("mohr-circle", &Map::new(), &Map::new());
+    // 호출 스레드는 막히지 않고 결과를 나중에 받는다
+    let o = rx.recv().unwrap().unwrap();
+    assert_eq!(o.attachments.len(), 2);
+    assert_eq!(main_thread, std::thread::current().id());
+    assert!(w.render_async("t", &Map::new(), &Map::new()).recv().unwrap().is_err());
+    assert!(w.render_async("mohr-circle", &Map::new(), &Map::new()).recv().unwrap().is_ok());
+}
+
+const BEAM: &str = include_str!("../../../plugins/beam/plugin.js");
+const SFD: &str = include_str!("../../../plugins/sfd-bmd/plugin.js");
+
+fn readout(r: &note_core::RenderedObject, label: &str) -> f64 {
+    r.output.readouts.iter().find(|x| x.label == label).unwrap_or_else(|| panic!("{label} 없음")).value.as_f64().unwrap()
+}
+
+fn beam_doc(loads: Value) -> Document {
+    let mut d = Document::default();
+    d.layers[0].objects.push(Object::new("b", "beam").with_param("L", json!(10)).with_param("loads", loads));
+    d.layers[0].objects.push(Object::new("d", "sfd-bmd").at(0.0, 0.0).with_ref("beam", "b"));
+    d
+}
+
+#[test]
+fn sfd_bmd_point_load_matches_closed_form() {
+    let mut h = JsHost::new();
+    h.load(BEAM).unwrap();
+    h.load(SFD).unwrap();
+    let r = beam_doc(json!([{"kind":"point","x":5,"P":20}])).render(&mut h).unwrap();
+    let d = &r[1];
+    near(readout(d, "R_A"), 10.0);
+    near(readout(d, "R_B"), 10.0);
+    near(readout(d, "|V|max"), 10.0);
+    near(readout(d, "M_max"), 50.0); // PL/4
+    near(readout(d, "x @ M_max"), 5.0);
+}
+
+#[test]
+fn sfd_bmd_udl_matches_closed_form() {
+    let mut h = JsHost::new();
+    h.load(BEAM).unwrap();
+    h.load(SFD).unwrap();
+    let r = beam_doc(json!([{"kind":"udl","a":0,"b":10,"w":2}])).render(&mut h).unwrap();
+    near(readout(&r[1], "R_A"), 10.0);
+    near(readout(&r[1], "M_max"), 25.0); // wL²/8
+    near(readout(&r[1], "x @ M_max"), 5.0);
+}
+
+#[test]
+fn sfd_bmd_unsymmetric_load_reactions() {
+    let mut h = JsHost::new();
+    h.load(BEAM).unwrap();
+    h.load(SFD).unwrap();
+    let r = beam_doc(json!([{"kind":"point","x":2,"P":30}])).render(&mut h).unwrap();
+    near(readout(&r[1], "R_B"), 6.0); // 30*2/10
+    near(readout(&r[1], "R_A"), 24.0);
+    near(readout(&r[1], "M_max"), 48.0); // Pab/L = 30*2*8/10
+}
+
+#[test]
+fn diagram_follows_beam_when_beam_changes() {
+    let mut h = JsHost::new();
+    h.load(BEAM).unwrap();
+    h.load(SFD).unwrap();
+    let mut doc = beam_doc(json!([{"kind":"point","x":5,"P":20}]));
+    assert_eq!(readout(&doc.render(&mut h).unwrap()[1], "M_max"), 50.0);
+    doc.object_mut("b").unwrap().params.insert("loads".into(), json!([{"kind":"point","x":5,"P":40}]));
+    near(readout(&doc.render(&mut h).unwrap()[1], "M_max"), 100.0);
+}
+
+#[test]
+fn diagram_aligns_with_beam_position() {
+    let mut h = JsHost::new();
+    h.load(BEAM).unwrap();
+    h.load(SFD).unwrap();
+    let mut doc = beam_doc(json!([{"kind":"point","x":5,"P":20}]));
+    doc.object_mut("b").unwrap().origin = [7.0, 3.0]; // 보를 옮기면 offset 이 바뀌어 선도 x 가 보와 정렬
+    let r = doc.render(&mut h).unwrap();
+    // 선도(원점 0,0)의 축 첫 선은 보 시작점 x=7 월드에서 시작해야 한다
+    match &r[1].output.attachments[0].draws[0] {
+        DrawCmd::Line { from, .. } => near(from[0], 7.0),
+        d => panic!("{d:?}"),
+    }
+    near(r[1].output.snaps[0].at[0], 7.0 + 5.0);
+}
+
+#[test]
+fn missing_or_wrong_ref_is_error() {
+    let mut h = JsHost::new();
+    h.load(BEAM).unwrap();
+    h.load(SFD).unwrap();
+    let mut d = Document::default();
+    d.layers[0].objects.push(Object::new("d", "sfd-bmd"));
+    assert!(d.render(&mut h).is_err()); // 연결 없음
+    let mut d = Document::default();
+    d.layers[0].objects.push(Object::new("c", "circle"));
+    d.layers[0].objects.push(Object::new("d", "sfd-bmd").with_ref("beam", "c"));
+    assert!(d.render(&mut h).is_err()); // type 불일치
+    let mut d = Document::default();
+    d.layers[0].objects.push(Object::new("d", "sfd-bmd").with_ref("beam", "ghost"));
+    assert!(d.render(&mut h).is_err()); // 대상 없음
 }

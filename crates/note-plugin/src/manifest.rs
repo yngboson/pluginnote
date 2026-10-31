@@ -19,11 +19,21 @@ pub struct ParamSpec {
     pub editor: Option<String>,
 }
 
+/// 다른 객체에 대한 연결 선언. `type` 이 일치하는 객체만 연결할 수 있다.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RefSpec {
+    #[serde(rename = "type")]
+    pub ty: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Example {
     #[serde(default)]
     pub name: Option<String>,
     pub params: Map<String, Value>,
+    /// 연결이 필요한 플러그인의 검사용 가짜 대상: 이름 → {type, params, offset?}
+    #[serde(default)]
+    pub refs: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -45,6 +55,8 @@ pub struct Manifest {
     #[serde(default)]
     pub params: BTreeMap<String, ParamSpec>,
     #[serde(default)]
+    pub refs: BTreeMap<String, RefSpec>,
+    #[serde(default)]
     pub examples: Vec<Example>,
 }
 
@@ -52,6 +64,20 @@ impl Manifest {
     pub fn api_compatible(&self) -> bool {
         let major = |v: &str| v.split('.').next().map(str::to_owned);
         major(&self.api_version) == major(API_VERSION)
+    }
+
+    pub fn check_refs(&self, given: &Map<String, Value>) -> Result<(), String> {
+        for (name, spec) in &self.refs {
+            let r = given.get(name).ok_or_else(|| format!("연결 '{name}' 이(가) 필요함 (type={})", spec.ty))?;
+            let ty = r.get("type").and_then(Value::as_str).unwrap_or("");
+            if ty != spec.ty {
+                return Err(format!("연결 '{name}' 은 type={} 이어야 하는데 {ty}", spec.ty));
+            }
+        }
+        if let Some(k) = given.keys().find(|k| !self.refs.contains_key(*k)) {
+            return Err(format!("선언되지 않은 연결: {k}"));
+        }
+        Ok(())
     }
 
     /// 누락된 값을 기본값으로 채우고, 숫자 범위를 검증한다. 모르는 키는 거부한다(오타 방지).

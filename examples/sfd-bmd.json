@@ -1,0 +1,11 @@
+{
+  "format": "pluginnote",
+  "format_version": 1,
+  "layers": [{
+    "id": "L1", "name": "보",
+    "objects": [
+      { "id": "beam1", "type": "beam", "params": { "L": 10, "loads": [{"kind":"point","x":3,"P":20},{"kind":"udl","a":5,"b":10,"w":2}] } },
+      { "id": "diag1", "type": "sfd-bmd", "refs": { "beam": "beam1" } }
+    ]
+  }]
+}
