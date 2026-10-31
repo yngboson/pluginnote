@@ -1,0 +1,11 @@
+{
+  "format": "pluginnote",
+  "format_version": 1,
+  "layers": [{
+    "id": "L1",
+    "objects": [
+      { "id": "m1", "type": "mohr-circle", "params": { "sx": 80, "sy": -40, "txy": 30 } },
+      { "id": "p1", "type": "mohr-principal", "refs": { "circle": "m1" } }
+    ]
+  }]
+}

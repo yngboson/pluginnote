@@ -1,0 +1,16 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+      - name: 번들 플러그인 자동 검사
+        run: cargo run -q -p note-cli -- check plugins/*/plugin.js plugins/*/plugin.json
+      - name: 바인딩 생성 확인
+        run: scripts/gen-bindings.sh

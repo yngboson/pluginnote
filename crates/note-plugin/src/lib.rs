@@ -166,6 +166,17 @@ impl JsHost {
         let budget = self.limits.time_per_call;
         let p = self.plugins.get(id).ok_or_else(|| PluginError::Render(format!("로드되지 않은 플러그인: {id}")))?;
         let resolved = p.manifest.resolve_params(params).map_err(PluginError::Params)?;
+        // 연결 대상의 params 에도 대상 플러그인의 기본값을 채워서 넘긴다(대상이 값을 비워 둬도 참조 쪽이 안전하게 읽도록)
+        let mut refs = refs.clone();
+        for r in refs.values_mut() {
+            let ty = r.get("type").and_then(Value::as_str).map(str::to_owned);
+            let given = r.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
+            if let Some(target) = ty.and_then(|t| self.plugins.get(&t)) {
+                let full = target.manifest.resolve_params(&given).map_err(|e| PluginError::Params(format!("연결 대상: {e}")))?;
+                r["params"] = Value::Object(full);
+            }
+        }
+        let refs = &refs;
         p.manifest.check_refs(refs).map_err(PluginError::Params)?;
         let (rt_ctx, deadline) = match &p.backend {
             Backend::Declarative(spec) => return declarative::render(spec, &resolved).map_err(PluginError::Render),

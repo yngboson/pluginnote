@@ -335,3 +335,55 @@ fn declarative_permission_and_param_checks_apply() {
     h.load(SS).unwrap();
     assert!(h.render_plugin("stress-strain", &params(json!({"E": 0})), &Map::new()).is_err()); // min 위반
 }
+
+#[test]
+fn ref_target_params_get_target_plugin_defaults() {
+    let mut h = JsHost::new();
+    h.load(BEAM).unwrap();
+    h.load(SFD).unwrap();
+    let mut d = Document::default();
+    d.layers[0].objects.push(Object::new("b", "beam")); // params 비어 있음 → L=10, 중앙 20 기본
+    d.layers[0].objects.push(Object::new("d", "sfd-bmd").with_ref("beam", "b"));
+    near(readout(&d.render(&mut h).unwrap()[1], "M_max"), 50.0);
+}
+
+const MOHR_P: &str = include_str!("../../../plugins/mohr-principal/plugin.js");
+
+#[test]
+fn mohr_principal_extension_via_refs_without_touching_preset() {
+    let mut h = JsHost::new();
+    h.load(MOHR).unwrap();
+    h.load(MOHR_P).unwrap();
+    let mut d = Document::default();
+    d.layers[0].objects.push(Object::new("m", "mohr-circle").with_param("sx", json!(80)).with_param("sy", json!(-40)).with_param("txy", json!(30)));
+    d.layers[0].objects.push(Object::new("p", "mohr-principal").with_ref("circle", "m"));
+    let r = d.render(&mut h).unwrap();
+    let rr = (60f64 * 60.0 + 30.0 * 30.0).sqrt();
+    near(readout(&r[1], "σ1"), 20.0 + rr);
+    near(readout(&r[1], "σ2"), 20.0 - rr);
+    near(readout(&r[1], "τmax"), rr);
+    near(readout(&r[1], "θp (deg)"), 0.5 * (30f64).atan2(60.0).to_degrees());
+
+    // 주응력은 원 위에 있어야 한다: σ1 스냅점은 원의 오른쪽 끝
+    let s1 = r[1].output.snaps.iter().find(|s| s.name == "sigma1").unwrap();
+    let (c, rad) = circle_of(&r[0].output);
+    near(s1.at[0], c[0] + rad);
+
+    // 원 객체를 옮기면 주석이 함께 따라간다
+    d.object_mut("m").unwrap().origin = [100.0, 0.0];
+    let r2 = d.render(&mut h).unwrap();
+    near(r2[1].output.snaps.iter().find(|s| s.name == "sigma1").unwrap().at[0], 100.0 + c[0] + rad);
+}
+
+#[test]
+fn mohr_principal_pure_shear_gives_45_degrees() {
+    let mut h = JsHost::new();
+    h.load(MOHR).unwrap();
+    h.load(MOHR_P).unwrap();
+    let mut d = Document::default();
+    d.layers[0].objects.push(Object::new("m", "mohr-circle").with_param("sx", json!(0)).with_param("sy", json!(0)).with_param("txy", json!(50)));
+    d.layers[0].objects.push(Object::new("p", "mohr-principal").with_ref("circle", "m"));
+    let r = d.render(&mut h).unwrap();
+    near(readout(&r[1], "θp (deg)"), 45.0);
+    near(readout(&r[1], "σ1"), 50.0);
+}

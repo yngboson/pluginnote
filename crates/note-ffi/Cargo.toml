@@ -1,0 +1,22 @@
+[package]
+name = "note-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+name = "note_ffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+note-core = { path = "../note-core" }
+note-plugin = { path = "../note-plugin" }
+note-registry = { path = "../note-registry" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uniffi = { version = "0.29", features = ["cli"] }

@@ -149,18 +149,23 @@ impl Document {
         self.layers.iter_mut().flat_map(|l| l.objects.iter_mut()).find(|o| o.id == id)
     }
 
+    /// 객체 하나만 렌더한다(연결 대상은 문서에서 찾음). 한 객체의 실패가 다른 객체에 번지지 않게 UI 가 개별 호출할 때 쓴다.
+    pub fn render_one(&self, obj: &Object, rt: &mut dyn PluginRuntime) -> Result<RenderedObject> {
+        let local = if let Some(o) = builtin(obj)? {
+            o
+        } else if rt.has(&obj.ty) {
+            rt.render(&obj.ty, &obj.params, &self.resolve_refs(obj)?)?
+        } else {
+            return Err(CoreError::UnknownType(obj.ty.clone()));
+        };
+        Ok(RenderedObject { id: obj.id.clone(), output: obj.xform().output(&local) })
+    }
+
     /// 모든 객체를 렌더한다. 잉크는 Polyline 으로 함께 반환하지 않는다(네이티브가 그린다).
     pub fn render(&self, rt: &mut dyn PluginRuntime) -> Result<Vec<RenderedObject>> {
         let mut out = Vec::new();
         for obj in self.layers.iter().flat_map(|l| l.objects.iter()) {
-            let local = if let Some(o) = builtin(obj)? {
-                o
-            } else if rt.has(&obj.ty) {
-                rt.render(&obj.ty, &obj.params, &self.resolve_refs(obj)?)?
-            } else {
-                return Err(CoreError::UnknownType(obj.ty.clone()));
-            };
-            out.push(RenderedObject { id: obj.id.clone(), output: obj.xform().output(&local) });
+            out.push(self.render_one(obj, rt)?);
         }
         Ok(out)
     }
