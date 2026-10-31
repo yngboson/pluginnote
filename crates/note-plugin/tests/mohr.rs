@@ -286,3 +286,52 @@ fn missing_or_wrong_ref_is_error() {
     d.layers[0].objects.push(Object::new("d", "sfd-bmd").with_ref("beam", "ghost"));
     assert!(d.render(&mut h).is_err()); // 대상 없음
 }
+
+const SS: &str = include_str!("../../../plugins/stress-strain/plugin.json");
+
+#[test]
+fn declarative_stress_strain_geometry() {
+    let mut h = JsHost::new();
+    h.load(SS).unwrap();
+    let o = h.render_plugin("stress-strain", &Map::new(), &Map::new()).unwrap();
+    match &o.draws[0] {
+        DrawCmd::Polyline { points, .. } => {
+            assert_eq!(points[0], [0.0, 0.0]);
+            near(points[1][0], 250.0 / 200000.0 * 8.0 * 1000.0); // 항복점 x = εy * kel * xscale (도식용 과장)
+            near(points[1][1], 250.0);
+            near(points.iter().map(|p| p[1]).fold(0.0, f64::max), 400.0); // 최대 응력 = σu
+        }
+        d => panic!("{d:?}"),
+    }
+    let yld = o.snaps.iter().find(|s| s.name == "yield").unwrap();
+    near(yld.at[1], 250.0);
+    // 0.2% offset 선은 표시된 탄성 직선과 평행
+    let slope = 250.0 / (250.0 / 200000.0 * 8.0 * 1000.0);
+    match &o.attachments.iter().find(|a| a.name == "offset-line").unwrap().draws[0] {
+        DrawCmd::Line { from, to, .. } => near((to[1] - from[1]) / (to[0] - from[0]), slope),
+        d => panic!("{d:?}"),
+    }
+}
+
+#[test]
+fn declarative_needs_no_js_and_rejects_bad_expressions() {
+    let bad = r#"{"id":"x","version":"1","apiVersion":"0.1","draw":[{"op":"line","from":["1","0"],"to":["system(1)","0"]}]}"#;
+    let mut h = JsHost::new();
+    h.load(bad).unwrap();
+    assert!(matches!(h.render_plugin("x", &Map::new(), &Map::new()), Err(PluginError::Render(_))));
+    let div0 = r#"{"id":"y","version":"1","apiVersion":"0.1","draw":[{"op":"line","from":["1/0","0"],"to":["1","0"]}]}"#;
+    h.load(div0).unwrap();
+    assert!(h.render_plugin("y", &Map::new(), &Map::new()).is_err());
+    let undefined = r#"{"id":"z","version":"1","apiVersion":"0.1","draw":[{"op":"circle","cx":"0","cy":"0","r":"nope"}]}"#;
+    h.load(undefined).unwrap();
+    assert!(h.render_plugin("z", &Map::new(), &Map::new()).is_err());
+}
+
+#[test]
+fn declarative_permission_and_param_checks_apply() {
+    let src = r#"{"id":"p","version":"1","apiVersion":"0.1","permissions":["network"],"draw":[]}"#;
+    assert!(matches!(JsHost::new().load(src), Err(PluginError::Permission(_))));
+    let mut h = JsHost::new();
+    h.load(SS).unwrap();
+    assert!(h.render_plugin("stress-strain", &params(json!({"E": 0})), &Map::new()).is_err()); // min 위반
+}

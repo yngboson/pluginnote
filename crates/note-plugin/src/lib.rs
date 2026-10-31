@@ -7,6 +7,7 @@
 //! TODO(단계 3 후반): 플러그인 연산을 별도 스레드로 옮겨 필기 스레드와 분리한다.
 //! 지금은 동기 호출이며, 호스트 API(`render`)는 스레드 이동 시에도 그대로 유지되도록 `&mut self` 만 요구한다.
 
+mod declarative;
 mod manifest;
 mod worker;
 
@@ -55,12 +56,19 @@ impl Default for Limits {
     }
 }
 
+enum Backend {
+    Js {
+        // Runtime 은 Context 보다 오래 살아야 한다
+        _rt: Runtime,
+        ctx: Context,
+        deadline: Arc<Mutex<Option<Instant>>>,
+    },
+    Declarative(Box<declarative::Spec>),
+}
+
 struct Loaded {
     manifest: Manifest,
-    // Runtime 은 Context 보다 오래 살아야 한다
-    _rt: Runtime,
-    ctx: Context,
-    deadline: Arc<Mutex<Option<Instant>>>,
+    backend: Backend,
 }
 
 pub struct JsHost {
@@ -95,8 +103,39 @@ impl JsHost {
         self.plugins.get(id).map(|p| &p.manifest)
     }
 
-    /// JS 소스를 로드한다. `export default definePlugin({...})` 형태의 ES 모듈.
+    /// 소스가 `{` 로 시작하면 선언형 JSON 스펙, 아니면 JS 모듈로 로드한다.
     pub fn load(&mut self, source: &str) -> Result<Manifest, PluginError> {
+        if source.trim_start().starts_with('{') {
+            self.load_declarative(source)
+        } else {
+            self.load_js(source)
+        }
+    }
+
+    fn check_manifest(&self, manifest: &Manifest) -> Result<(), PluginError> {
+        if manifest.id.is_empty() || manifest.version.is_empty() {
+            return Err(PluginError::Manifest("id 와 version 은 필수".into()));
+        }
+        if !manifest.api_compatible() {
+            return Err(PluginError::ApiVersion { plugin: manifest.api_version.clone(), host: API_VERSION.into() });
+        }
+        let denied: Vec<String> = manifest.permissions.iter().filter(|p| !self.granted.contains(*p)).cloned().collect();
+        if !denied.is_empty() {
+            return Err(PluginError::Permission(denied));
+        }
+        Ok(())
+    }
+
+    fn load_declarative(&mut self, source: &str) -> Result<Manifest, PluginError> {
+        let spec: declarative::Spec = serde_json::from_str(source).map_err(|e| PluginError::Manifest(e.to_string()))?;
+        self.check_manifest(&spec.manifest)?;
+        let m = spec.manifest.clone();
+        self.plugins.insert(m.id.clone(), Loaded { manifest: m.clone(), backend: Backend::Declarative(Box::new(spec)) });
+        Ok(m)
+    }
+
+    /// JS 소스를 로드한다. `export default definePlugin({...})` 형태의 ES 모듈.
+    fn load_js(&mut self, source: &str) -> Result<Manifest, PluginError> {
         let rt = Runtime::new().map_err(|e| PluginError::Load(e.to_string()))?;
         rt.set_memory_limit(self.limits.memory_bytes);
         rt.set_max_stack_size(self.limits.stack_bytes);
@@ -118,17 +157,8 @@ impl JsHost {
             .map_err(PluginError::Load)?;
 
         let manifest: Manifest = serde_json::from_str(&manifest_json).map_err(|e| PluginError::Manifest(e.to_string()))?;
-        if manifest.id.is_empty() || manifest.version.is_empty() {
-            return Err(PluginError::Manifest("id 와 version 은 필수".into()));
-        }
-        if !manifest.api_compatible() {
-            return Err(PluginError::ApiVersion { plugin: manifest.api_version.clone(), host: API_VERSION.into() });
-        }
-        let denied: Vec<String> = manifest.permissions.iter().filter(|p| !self.granted.contains(*p)).cloned().collect();
-        if !denied.is_empty() {
-            return Err(PluginError::Permission(denied));
-        }
-        self.plugins.insert(manifest.id.clone(), Loaded { manifest: manifest.clone(), _rt: rt, ctx, deadline });
+        self.check_manifest(&manifest)?;
+        self.plugins.insert(manifest.id.clone(), Loaded { manifest: manifest.clone(), backend: Backend::Js { _rt: rt, ctx, deadline } });
         Ok(manifest)
     }
 
@@ -137,15 +167,19 @@ impl JsHost {
         let p = self.plugins.get(id).ok_or_else(|| PluginError::Render(format!("로드되지 않은 플러그인: {id}")))?;
         let resolved = p.manifest.resolve_params(params).map_err(PluginError::Params)?;
         p.manifest.check_refs(refs).map_err(PluginError::Params)?;
+        let (rt_ctx, deadline) = match &p.backend {
+            Backend::Declarative(spec) => return declarative::render(spec, &resolved).map_err(PluginError::Render),
+            Backend::Js { ctx, deadline, .. } => (ctx, deadline),
+        };
         let json = Value::Object(resolved).to_string();
         let refs_json = Value::Object(refs.clone()).to_string();
-        *p.deadline.lock().unwrap() = Some(Instant::now() + budget);
+        *deadline.lock().unwrap() = Some(Instant::now() + budget);
         let started = Instant::now();
-        let res = p.ctx.with(|c| -> Result<String, String> {
+        let res = rt_ctx.with(|c| -> Result<String, String> {
             let f: Function = c.globals().get("__render").map_err(|e| e.to_string())?;
             f.call::<_, String>((json, refs_json)).catch(&c).map_err(|e| e.to_string())
         });
-        *p.deadline.lock().unwrap() = None;
+        *deadline.lock().unwrap() = None;
         match res {
             Ok(s) => serde_json::from_str(&s).map_err(|e| PluginError::Render(e.to_string())),
             Err(_) if started.elapsed() >= budget => Err(PluginError::Timeout(budget)),

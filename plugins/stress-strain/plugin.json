@@ -1,0 +1,318 @@
+{
+  "id": "stress-strain",
+  "version": "0.1.0",
+  "apiVersion": "0.1",
+  "name": "응력-변형률 곡선",
+  "description": "연성 금속의 공칭 응력-변형률 곡선: 탄성 기울기 E, 항복, 변형률 경화, 인장강도, 파단, 0.2% offset 선 (선언형) 탄성구간은 도식용으로 과장 표시",
+  "tags": [
+    "재료역학",
+    "재료",
+    "응력",
+    "변형률"
+  ],
+  "license": "MIT",
+  "permissions": [],
+  "params": {
+    "E": {
+      "default": 200000,
+      "label": "탄성계수 E (MPa)",
+      "min": 1
+    },
+    "sy": {
+      "default": 250,
+      "label": "항복응력 σy (MPa)",
+      "min": 1
+    },
+    "su": {
+      "default": 400,
+      "label": "인장강도 σu (MPa)",
+      "min": 1
+    },
+    "eh": {
+      "default": 0.02,
+      "label": "경화 시작 변형률",
+      "min": 0.0001
+    },
+    "eu": {
+      "default": 0.18,
+      "label": "최대하중 변형률",
+      "min": 0.0002
+    },
+    "ef": {
+      "default": 0.25,
+      "label": "파단 변형률",
+      "min": 0.0003
+    },
+    "sf": {
+      "default": 320,
+      "label": "파단 응력 (MPa)",
+      "min": 1
+    },
+    "xscale": {
+      "default": 1000,
+      "label": "변형률 축 표시 배율",
+      "min": 1
+    },
+    "kel": {
+      "default": 8,
+      "label": "탄성구간 표시 과장 배율",
+      "min": 1
+    }
+  },
+  "vars": [
+    {
+      "name": "ey",
+      "expr": "sy / E"
+    },
+    {
+      "name": "eyd",
+      "expr": "ey * kel * xscale"
+    },
+    {
+      "name": "off",
+      "expr": "0.002 * xscale * kel"
+    },
+    {
+      "name": "so",
+      "expr": "sy * 1.15"
+    }
+  ],
+  "draw": [
+    {
+      "op": "polyline",
+      "points": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "eyd",
+          "sy"
+        ],
+        [
+          "eh * xscale",
+          "sy"
+        ],
+        [
+          "(eh + 0.25 * (eu - eh)) * xscale",
+          "sy + (su - sy) * (1 - (1 - 0.25)^2)"
+        ],
+        [
+          "(eh + 0.50 * (eu - eh)) * xscale",
+          "sy + (su - sy) * (1 - (1 - 0.50)^2)"
+        ],
+        [
+          "(eh + 0.75 * (eu - eh)) * xscale",
+          "sy + (su - sy) * (1 - (1 - 0.75)^2)"
+        ],
+        [
+          "eu * xscale",
+          "su"
+        ],
+        [
+          "(eu + 0.5 * (ef - eu)) * xscale",
+          "su - (su - sf) * 0.45"
+        ],
+        [
+          "ef * xscale",
+          "sf"
+        ]
+      ]
+    }
+  ],
+  "attach": [
+    {
+      "name": "axes",
+      "draw": [
+        {
+          "op": "arrow",
+          "from": [
+            "0",
+            "0"
+          ],
+          "to": [
+            "ef * 1.12 * xscale",
+            "0"
+          ]
+        },
+        {
+          "op": "arrow",
+          "from": [
+            "0",
+            "0"
+          ],
+          "to": [
+            "0",
+            "su * 1.2"
+          ]
+        },
+        {
+          "op": "text",
+          "at": [
+            "ef * 1.12 * xscale",
+            "-su * 0.06"
+          ],
+          "text": "ε"
+        },
+        {
+          "op": "text",
+          "at": [
+            "ef * 0.01 * xscale",
+            "su * 1.2"
+          ],
+          "text": "σ"
+        }
+      ]
+    },
+    {
+      "name": "offset-line",
+      "draw": [
+        {
+          "op": "line",
+          "from": [
+            "off",
+            "0"
+          ],
+          "to": [
+            "off + so * eyd / sy",
+            "so"
+          ],
+          "style": "gray"
+        },
+        {
+          "op": "text",
+          "at": [
+            "off + so * eyd / sy",
+            "so"
+          ],
+          "text": "0.2% offset",
+          "size": 11
+        }
+      ]
+    },
+    {
+      "name": "yield-guides",
+      "draw": [
+        {
+          "op": "line",
+          "from": [
+            "0",
+            "sy"
+          ],
+          "to": [
+            "eyd",
+            "sy"
+          ],
+          "style": "gray"
+        },
+        {
+          "op": "line",
+          "from": [
+            "eyd",
+            "0"
+          ],
+          "to": [
+            "eyd",
+            "sy"
+          ],
+          "style": "gray"
+        },
+        {
+          "op": "line",
+          "from": [
+            "0",
+            "su"
+          ],
+          "to": [
+            "eu * xscale",
+            "su"
+          ],
+          "style": "gray"
+        },
+        {
+          "op": "line",
+          "from": [
+            "eu * xscale",
+            "0"
+          ],
+          "to": [
+            "eu * xscale",
+            "su"
+          ],
+          "style": "gray"
+        },
+        {
+          "op": "text",
+          "at": [
+            "-ef * 0.06 * xscale",
+            "sy"
+          ],
+          "text": "σy",
+          "size": 12
+        },
+        {
+          "op": "text",
+          "at": [
+            "-ef * 0.06 * xscale",
+            "su"
+          ],
+          "text": "σu",
+          "size": 12
+        }
+      ]
+    }
+  ],
+  "snaps": [
+    {
+      "name": "yield",
+      "at": [
+        "eyd",
+        "sy"
+      ]
+    },
+    {
+      "name": "ultimate",
+      "at": [
+        "eu * xscale",
+        "su"
+      ]
+    },
+    {
+      "name": "fracture",
+      "at": [
+        "ef * xscale",
+        "sf"
+      ]
+    }
+  ],
+  "readouts": [
+    {
+      "label": "항복 변형률 εy",
+      "expr": "ey",
+      "formula": "σy / E"
+    },
+    {
+      "label": "인장강도/항복비",
+      "expr": "su / sy",
+      "formula": "σu / σy"
+    }
+  ],
+  "examples": [
+    {
+      "name": "연강",
+      "params": {}
+    },
+    {
+      "name": "알루미늄(근사)",
+      "params": {
+        "E": 70000,
+        "sy": 275,
+        "su": 310,
+        "eh": 0.01,
+        "eu": 0.1,
+        "ef": 0.14,
+        "sf": 250
+      }
+    }
+  ]
+}
