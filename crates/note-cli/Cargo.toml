@@ -1,0 +1,14 @@
+[package]
+name = "note-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pluginnote"
+path = "src/main.rs"
+
+[dependencies]
+note-core = { path = "../note-core" }
+note-plugin = { path = "../note-plugin" }
+serde_json.workspace = true
