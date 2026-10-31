@@ -2,6 +2,9 @@ name: ci
 on:
   push:
   pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true   # 새 푸시가 오면 이전 run 을 취소
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,12 +20,14 @@ jobs:
   ios:
     # iPad 앱 컴파일 검증: Rust → xcframework → XcodeGen → xcodebuild (시뮬레이터)
     runs-on: macos-14
+    timeout-minutes: 30   # 멈춘 빌드가 로그 없이 남지 않도록
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: brew install xcodegen
       - run: ios/build-ios.sh
+        timeout-minutes: 20
       - run: cd ios && xcodegen
       - run: |
           cd ios

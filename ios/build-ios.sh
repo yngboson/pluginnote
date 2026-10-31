@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # macOS 전용. Rust 코어를 iOS 용으로 빌드해 NoteFFI.xcframework 와 Swift 바인딩을 만든다.
 set -euo pipefail
+step() { echo "::group::$*"; echo "[build-ios] $(date +%T) $*"; }
 cd "$(dirname "$0")/.."
 command -v xcodebuild >/dev/null || { echo "xcodebuild 필요 (macOS + Xcode)"; exit 1; }
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
@@ -11,13 +12,16 @@ export IPHONEOS_DEPLOYMENT_TARGET=17.0
 
 # iOS 는 정적 라이브러리만 필요하다(cdylib 링크는 건너뜀)
 for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+  step "rust staticlib $t"
   cargo rustc -p note-ffi --lib --release --target "$t" --crate-type staticlib
 done
 
+step lipo
 # 시뮬레이터용 fat 라이브러리
 mkdir -p target/ios-sim
 lipo -create target/aarch64-apple-ios-sim/release/libnote_ffi.a target/x86_64-apple-ios/release/libnote_ffi.a -output target/ios-sim/libnote_ffi.a
 
+step "bindings(host build)"
 # 바인딩 생성(호스트 빌드 라이브러리 기준). 호스트 빌드에는 iOS 배포 타깃을 적용하지 않는다.
 unset IPHONEOS_DEPLOYMENT_TARGET
 cargo build -p note-ffi
@@ -30,6 +34,7 @@ rm -rf "$hdr" && mkdir -p "$hdr"
 cp target/bindings/swift/note_ffiFFI.h "$hdr/"
 cp target/bindings/swift/note_ffiFFI.modulemap "$hdr/module.modulemap"
 
+step xcframework
 rm -rf ios/NoteFFI.xcframework
 xcodebuild -create-xcframework \
   -library target/aarch64-apple-ios/release/libnote_ffi.a -headers "$hdr" \
