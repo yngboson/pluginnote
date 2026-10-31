@@ -170,7 +170,19 @@ impl NoteEngine {
         removed
     }
 
-    /// 잉크 획 보관. points 는 [x, y, 필압] 반복의 평탄 배열.
+    /// 획 지우기(인덱스는 render() 의 strokes 배열 순서). 지웠으면 true. 되돌리기 가능.
+    pub fn remove_stroke(&self, index: u32) -> bool {
+        let mut g = self.inner.lock().unwrap();
+        let i = index as usize;
+        if i >= g.doc.layers[0].strokes.len() {
+            return false;
+        }
+        g.checkpoint();
+        g.doc.layers[0].strokes.remove(i);
+        true
+    }
+
+    /// 잉크 획 보관. points 는 월드 좌표 [x, y, 필압] 반복의 평탄 배열(UI 가 화면→월드로 변환해서 넘긴다).
     pub fn add_stroke(&self, flat_xyp: Vec<f32>, stroke_color: String, width: f64) -> Result<(), NoteError> {
         if flat_xyp.len() % 3 != 0 {
             return Err(fail("points 길이는 3의 배수여야 함"));
@@ -195,8 +207,8 @@ impl NoteEngine {
                 Err(e) => out.push(json!({"id": obj.id, "ok": false, "error": e.to_string()})),
             }
         }
-        let strokes: Vec<_> = doc.layers.iter().flat_map(|l| l.strokes.iter()).collect();
-        json!({"objects": out, "stroke_count": strokes.len()}).to_string()
+        let strokes: Vec<_> = doc.layers[0].strokes.iter().map(|s| json!({"points": s.points, "style": s.style})).collect();
+        json!({"objects": out, "stroke_count": strokes.len(), "strokes": strokes}).to_string()
     }
 
     pub fn export_svg(&self) -> Result<String, NoteError> {

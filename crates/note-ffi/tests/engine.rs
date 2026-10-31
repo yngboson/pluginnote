@@ -124,3 +124,25 @@ fn undo_history_is_cleared_on_load_and_bounded() {
     e.load_document(saved).unwrap();
     assert!(!e.can_undo() && !e.can_redo());
 }
+
+#[test]
+fn strokes_are_world_data_erasable_and_undoable() {
+    let e = NoteEngine::new(vec![]);
+    e.add_stroke(vec![0.0, 0.0, 0.5, 5.0, 5.0, 0.8], "#000".into(), 2.0).unwrap();
+    e.add_stroke(vec![1.0, 1.0, 0.5, 2.0, 2.0, 0.5], "#f00".into(), 3.0).unwrap();
+    let f = frame(&e);
+    assert_eq!(f["strokes"].as_array().unwrap().len(), 2);
+    assert_eq!(f["strokes"][0]["points"][1][0], 5.0);
+    assert_eq!(f["strokes"][1]["style"]["stroke"], "#f00");
+
+    assert!(e.remove_stroke(0)); // 지우개
+    let f = frame(&e);
+    assert_eq!(f["stroke_count"], 1);
+    assert_eq!(f["strokes"][0]["style"]["stroke"], "#f00");
+    assert!(!e.remove_stroke(5)); // 범위 밖
+
+    assert!(e.undo()); // 지운 획 복원
+    assert_eq!(frame(&e)["stroke_count"], 2);
+    // 문서 저장에 획이 월드 좌표로 들어간다
+    assert!(e.document_json().unwrap().contains("\"strokes\""));
+}

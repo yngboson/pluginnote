@@ -16,7 +16,8 @@ struct ViewXform {
 }
 
 /// 객체 레이어(SwiftUI Canvas) + 잉크 레이어(PencilKit, 플랫폼 저지연 필기).
-/// v0 한계: 잉크는 화면 좌표 고정(줌/팬 시 따라가지 않음). 월드 좌표 잉크는 다음 단계.
+/// 잉크: PencilKit 은 쓰는 동안의 저지연 표시만 맡고, 획이 끝나면 월드 좌표로 변환해 코어에 저장한 뒤
+/// 이 뷰의 Canvas 가 현재 변환(xf)으로 그린다 → 확대/이동에 따라오고, 지우개/되돌리기는 코어 기준이다.
 struct CanvasView: View {
     @EnvironmentObject var store: EngineStore
     @State private var xf = ViewXform()
@@ -25,12 +26,19 @@ struct CanvasView: View {
     @State private var dragging: String?
     @Binding var mode: Mode
 
-    enum Mode: String, CaseIterable, Identifiable { case ink = "필기", object = "객체"; var id: String { rawValue } }
+    enum Mode: String, CaseIterable, Identifiable { case ink = "필기", object = "객체", erase = "지우개"; var id: String { rawValue } }
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 Canvas { ctx, size in
+                    for st in store.frame.strokes where st.points.count > 1 {
+                        var p = Path()
+                        p.move(to: xf.toScreen(st.points[0], in: size))
+                        st.points.dropFirst().forEach { p.addLine(to: xf.toScreen($0, in: size)) }
+                        let (sh, ss) = stroke(st.style)
+                        ctx.stroke(p, with: sh, style: ss)
+                    }
                     for o in store.frame.objects where o.ok {
                         let sel = o.id == store.selection
                         for a in o.attachments ?? [] { for d in a.draws { draw(d, &ctx, size, dim: false) } }
@@ -45,13 +53,21 @@ struct CanvasView: View {
                 }
                 .background(Color(white: 0.98))
                 .gesture(objectGestures(size: geo.size), including: mode == .object ? .all : .subviews)
+                .gesture(SpatialTapGesture().onEnded { v in
+                    if mode == .erase { eraseStroke(near: v.location, size: geo.size) }
+                }, including: mode == .erase ? .all : .subviews)
                 .gesture(MagnifyGesture().onChanged { v in
                     let s0 = zoomStart ?? xf.scale; zoomStart = s0
                     xf.scale = max(1, min(200, s0 * v.magnification))
                 }.onEnded { _ in zoomStart = nil })
 
                 InkLayer(enabled: mode == .ink) { pts in
-                    store.addStroke(points: pts, color: "#111111", width: 2)
+                    // 화면 좌표 → 월드 좌표
+                    let world = pts.map { p -> (x: Float, y: Float, p: Float) in
+                        let w = xf.toWorld(CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)), in: geo.size)
+                        return (Float(w.x), Float(w.y), p.p)
+                    }
+                    store.addStroke(points: world, color: "#111111", width: 2)
                 }
                 .allowsHitTesting(mode == .ink)
             }
@@ -73,6 +89,19 @@ struct CanvasView: View {
                 else if let p0 = panStart { xf.offset = CGSize(width: p0.width + v.translation.width, height: p0.height + v.translation.height) }
             }
             .onEnded { _ in dragging = nil; panStart = nil }
+    }
+
+    /// 터치 지점에서 가장 가까운 획(12pt 이내)을 코어에서 지운다
+    private func eraseStroke(near s: CGPoint, size: CGSize) {
+        var best: (Int, CGFloat)?
+        for (i, st) in store.frame.strokes.enumerated() {
+            for pt in st.points {
+                let sp = xf.toScreen(pt, in: size)
+                let d = hypot(sp.x - s.x, sp.y - s.y)
+                if d < 12, d < (best?.1 ?? .infinity) { best = (i, d) }
+            }
+        }
+        if let (i, _) = best { store.removeStroke(at: i) }
     }
 
     /// 그려진 점들 중 터치와 가까운 객체의 id
@@ -171,16 +200,20 @@ struct InkLayer: UIViewRepresentable {
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         var onStroke: ([(x: Float, y: Float, p: Float)]) -> Void
-        var seen = 0
+        private var clearing = false
         init(_ f: @escaping ([(x: Float, y: Float, p: Float)]) -> Void) { onStroke = f }
         func canvasViewDrawingDidChange(_ cv: PKCanvasView) {
+            guard !clearing else { return }
             let strokes = cv.drawing.strokes
-            guard strokes.count > seen else { seen = strokes.count; return }   // 지우개 등은 v0 에서 동기화하지 않음
-            for s in strokes[seen...] {
+            guard !strokes.isEmpty else { return }
+            // 끝난 획은 코어로 넘기고 PencilKit 화면은 비운다(이후엔 코어의 획을 Canvas 가 그린다)
+            for s in strokes {
                 let pts = s.path.map { (x: Float($0.location.x), y: Float($0.location.y), p: Float($0.force)) }
-                onStroke(pts)
+                if pts.count > 1 { onStroke(pts) }
             }
-            seen = strokes.count
+            clearing = true
+            cv.drawing = PKDrawing()
+            clearing = false
         }
     }
 }

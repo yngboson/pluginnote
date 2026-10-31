@@ -74,7 +74,22 @@ struct RenderedObject: Decodable, Identifiable {
     let readouts: [Readout]?
 }
 
-struct Frame: Decodable { let objects: [RenderedObject]; let stroke_count: Int }
+/// 코어에 보관된 잉크 획(월드 좌표). points 는 [x, y, 필압].
+struct InkStroke: Decodable { let points: [[Double]]; let style: Style }
+
+struct Frame: Decodable {
+    let objects: [RenderedObject]
+    let stroke_count: Int
+    var strokes: [InkStroke] = []
+    private enum CodingKeys: String, CodingKey { case objects, stroke_count, strokes }
+    init(objects: [RenderedObject], stroke_count: Int) { self.objects = objects; self.stroke_count = stroke_count }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        objects = try c.decode([RenderedObject].self, forKey: .objects)
+        stroke_count = try c.decode(Int.self, forKey: .stroke_count)
+        strokes = try c.decodeIfPresent([InkStroke].self, forKey: .strokes) ?? []
+    }
+}
 
 // manifest JSON (load_plugin 결과)
 struct ParamSpec: Decodable { let `default`: JSONValue?; let label: String?; let min: Double?; let max: Double? }

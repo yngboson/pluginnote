@@ -102,9 +102,14 @@ final class EngineStore: ObservableObject {
 
     func remove(_ id: String) { _ = engine.removeObject(id: id); pendingIds.remove(id); if selection == id { selection = nil }; refresh() }
 
+    /// points 는 월드 좌표. 코어가 보관하므로 확대/이동에 따라오고 되돌리기/지우개가 코어 기준으로 동작한다.
     func addStroke(points: [(x: Float, y: Float, p: Float)], color: String, width: Double) {
         let flat = points.flatMap { [$0.x, $0.y, $0.p] }
-        try? engine.addStroke(flatXyp: flat, strokeColor: color, width: width)
+        do { try engine.addStroke(flatXyp: flat, strokeColor: color, width: width); refresh() } catch { lastError = "\(error)" }
+    }
+
+    func removeStroke(at index: Int) {
+        if engine.removeStroke(index: UInt32(index)) { refresh() }
     }
 
     // MARK: 저장/내보내기
