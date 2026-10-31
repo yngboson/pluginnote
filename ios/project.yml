@@ -14,10 +14,10 @@ targets:
     platform: iOS
     sources:
       - path: PluginNote
-    resources:
       # 번들 플러그인(모어원, 보, SFD/BMD 등)을 앱에 포함. 폴더 구조 유지
       - path: ../plugins
         type: folder
+        buildPhase: resources
     dependencies:
       - framework: NoteFFI.xcframework
         embed: false

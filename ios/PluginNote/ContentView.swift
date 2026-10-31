@@ -113,6 +113,7 @@ struct ParamField: View {
                     .onSubmit { store.setParam(objectID, key, json: text) }
             }
         }
+        .onAppear { if let t = store.paramText(objectID, key) { text = t } }   // 입력칸에 현재 값을 보여 준다(기본값은 흐린 안내문)
     }
 }
 

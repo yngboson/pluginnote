@@ -14,7 +14,18 @@ final class EngineStore: ObservableObject {
     private let queue = DispatchQueue(label: "pluginnote.render", qos: .userInteractive)
     private var renderToken = 0
 
-    init() { loadBundledPlugins() }
+    init() { loadBundledPlugins(); loadPresets() }
+
+    /// 시작 시 보여줄 예시 3개: 모어원, 보, 보에 연결된 SFD/BMD. load 로 넣으므로 되돌리기에 남지 않는다.
+    private func loadPresets() {
+        let doc = """
+        {"format":"pluginnote","format_version":1,"layers":[{"id":"L1","name":"Layer 1","objects":[
+         {"id":"mohr-circle-1","type":"mohr-circle","params":{"sx":40,"sy":-20,"txy":15},"origin":[-30,34]},
+         {"id":"beam-1","type":"beam","params":{"L":30,"loads":[{"kind":"point","x":15,"P":20}]},"origin":[-30,-22]},
+         {"id":"sfd-bmd-1","type":"sfd-bmd","origin":[-30,-22],"refs":{"beam":"beam-1"}}]}]}
+        """
+        load(json: doc)
+    }
 
     // MARK: 플러그인
     func loadBundledPlugins() {
@@ -109,7 +120,29 @@ final class EngineStore: ObservableObject {
     }
 
     func removeStroke(at index: Int) {
-        if engine.removeStroke(index: UInt32(index)) { refresh() }
+        guard engine.removeStroke(index: UInt32(index)) else { return }
+        // 문지르며 지울 때 refresh 전에 다음 호출이 와도 인덱스가 어긋나지 않게 화면 쪽 목록도 바로 줄인다
+        if frame.strokes.indices.contains(index) { frame.strokes.remove(at: index) }
+        refresh()
+    }
+
+    // MARK: 문서에서 현재 값 읽기 (드래그 기준점, 속성 패널의 현재 값)
+    private func docObject(_ id: String) -> [String: Any]? {
+        guard let s = documentJSON(), let root = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any],
+              let layers = root["layers"] as? [[String: Any]] else { return nil }
+        for l in layers { for o in l["objects"] as? [[String: Any]] ?? [] where o["id"] as? String == id { return o } }
+        return nil
+    }
+    func origin(of id: String) -> CGPoint? {
+        guard let a = docObject(id)?["origin"] as? [Double], a.count == 2 else { return nil }
+        return CGPoint(x: a[0], y: a[1])
+    }
+    /// 저장된 값의 문자열. 값을 따로 정한 적이 없으면 nil (기본값을 쓰는 중)
+    func paramText(_ id: String, _ key: String) -> String? {
+        guard let v = (docObject(id)?["params"] as? [String: Any])?[key] else { return nil }
+        if let n = v as? NSNumber { return "\(n)" }
+        guard let d = try? JSONSerialization.data(withJSONObject: v, options: [.fragmentsAllowed]) else { return nil }
+        return String(data: d, encoding: .utf8)
     }
 
     // MARK: 저장/내보내기
