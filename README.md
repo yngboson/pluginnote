@@ -1,7 +1,7 @@
 # pluginnote (가칭)
 
 필기와 기본 도형만 코어로 제공하고, 공학 작도(모어원, SFD/BMD 등)는 스크립트 플러그인으로 확장하는 공학용 노트 앱.
-기획: [docs/PLAN.md](docs/PLAN.md)
+기획: [docs/PLAN.md](docs/PLAN.md) · 이어서 작업하기: [docs/HANDOFF.md](docs/HANDOFF.md)
 
 ```
 crates/note-core    객체 모델, 저장 포맷, 그리기 명령, SVG
