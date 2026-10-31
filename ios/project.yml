@@ -26,4 +26,5 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait"
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: dev.pluginnote.app
+        PRODUCT_BUNDLE_IDENTIFIER: dev.yngboson.pluginnote.app   # 실기기 서명용(Personal Team 은 고유 ID 필요)
+        DEVELOPMENT_TEAM: 63548MT4PV                             # Personal Team. 다른 계정이면 교체
