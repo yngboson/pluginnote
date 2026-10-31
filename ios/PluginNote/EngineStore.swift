@@ -79,6 +79,16 @@ final class EngineStore: ObservableObject {
         do { try engine.setParam(id: id, key: key, valueJson: "\(number)"); refresh() } catch { lastError = "\(error)" }
     }
 
+    /// 배열/객체 등 임의 JSON 값 설정(예: 보의 하중 목록). 잘못된 JSON 은 코어 호출 전에 거부한다.
+    @discardableResult
+    func setParam(_ id: String, _ key: String, json: String) -> Bool {
+        guard let d = json.data(using: .utf8), (try? JSONSerialization.jsonObject(with: d, options: [.fragmentsAllowed])) != nil else {
+            lastError = "올바른 JSON 이 아닙니다"
+            return false
+        }
+        do { try engine.setParam(id: id, key: key, valueJson: json); refresh(); return true } catch { lastError = "\(error)"; return false }
+    }
+
     func move(_ id: String, to p: CGPoint) {
         do { try engine.moveObject(id: id, x: p.x, y: p.y); refresh() } catch { lastError = "\(error)" }
     }

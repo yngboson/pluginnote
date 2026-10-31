@@ -44,11 +44,21 @@ struct JSONValue: Decodable, CustomStringConvertible {
         if let v = try? c.decode(Double.self) { raw = v }
         else if let v = try? c.decode(String.self) { raw = v }
         else if let v = try? c.decode(Bool.self) { raw = v }
-        else { raw = "—" }
+        else if let v = try? c.decode([JSONValue].self) { raw = v.map(\.raw) }
+        else if let v = try? c.decode([String: JSONValue].self) { raw = v.mapValues(\.raw) }
+        else { raw = NSNull() }
+    }
+    var isNumber: Bool { raw is Double }
+    /// JSON 텍스트(편집 필드 표시/전송용)
+    var jsonString: String {
+        if raw is NSNull { return "null" }
+        if let d = try? JSONSerialization.data(withJSONObject: raw, options: [.fragmentsAllowed, .sortedKeys]), let s = String(data: d, encoding: .utf8) { return s }
+        return "null"
     }
     var description: String {
         if let v = raw as? Double { return String(format: "%.4g", v) }
-        return "\(raw)"
+        if let v = raw as? String { return v }
+        return jsonString
     }
 }
 

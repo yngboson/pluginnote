@@ -1,10 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var store: EngineStore
     @State private var mode: CanvasView.Mode = .object
     @State private var showLibrary = false
     @State private var showPaste = false
+    @State private var showOpen = false
 
     var body: some View {
         NavigationSplitView {
@@ -20,10 +22,18 @@ struct ContentView: View {
                     }
                     ToolbarItemGroup(placement: .primaryAction) {
                         Button { showLibrary = true } label: { Label("플러그인", systemImage: "puzzlepiece.extension") }
+                        Button { showOpen = true } label: { Label("열기", systemImage: "folder") }
                         Button { showPaste = true } label: { Label("붙여넣기", systemImage: "doc.on.clipboard") }
                         ShareLink(item: store.documentJSON() ?? "{}", preview: SharePreview("pluginnote.json")) { Label("저장", systemImage: "square.and.arrow.up") }
                     }
                 }
+        }
+        .fileImporter(isPresented: $showOpen, allowedContentTypes: [.json]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            if let text = try? String(contentsOf: url, encoding: .utf8) { store.load(json: text) }
+            else { store.lastError = "파일을 읽을 수 없습니다" }
         }
         .sheet(isPresented: $showLibrary) { LibraryView().environmentObject(store) }
         .sheet(isPresented: $showPaste) { PasteImportView().environmentObject(store) }
@@ -77,17 +87,25 @@ struct ParamField: View {
     @State private var text = ""
 
     var body: some View {
-        // 배열 등 숫자가 아닌 기본값(예: 보의 하중 목록)은 v0 UI 에서 편집하지 않는다
-        if spec.default?.raw is Double {
+        let isNum = spec.default?.isNumber ?? false
+        VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(spec.label ?? key)
-                TextField(spec.default?.description ?? "", text: $text)
-                    .keyboardType(.numbersAndPunctuation)
-                    .multilineTextAlignment(.trailing)
-                    .onSubmit { if let v = Double(text) { store.setParam(objectID, key, number: v) } }
+                if isNum {
+                    TextField(spec.default?.description ?? "", text: $text)
+                        .keyboardType(.numbersAndPunctuation)
+                        .multilineTextAlignment(.trailing)
+                        .onSubmit { if let v = Double(text) { store.setParam(objectID, key, number: v) } }
+                }
             }
-        } else {
-            Text("\(spec.label ?? key): 편집 미지원(v0)").font(.caption).foregroundStyle(.secondary)
+            if !isNum {
+                // 배열/객체 값은 JSON 으로 직접 편집 (예: [{"kind":"point","x":5,"P":20}])
+                TextField(spec.default?.jsonString ?? "null", text: $text, axis: .vertical)
+                    .font(.system(.caption, design: .monospaced))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit { store.setParam(objectID, key, json: text) }
+            }
         }
     }
 }
