@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/note-core", "crates/note-plugin", "crates/note-cli"]
+members = ["crates/note-core", "crates/note-plugin", "crates/note-cli", "crates/note-registry"]
 
 [workspace.package]
 version = "0.1.0"

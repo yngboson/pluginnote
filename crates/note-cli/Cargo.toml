@@ -11,4 +11,5 @@ path = "src/main.rs"
 [dependencies]
 note-core = { path = "../note-core" }
 note-plugin = { path = "../note-plugin" }
+note-registry = { path = "../note-registry" }
 serde_json.workspace = true
