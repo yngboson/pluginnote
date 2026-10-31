@@ -65,3 +65,62 @@ fn refs_and_strokes_and_permissions() {
     assert!(e.remove_object("b".into()));
     assert!(!e.remove_object("b".into()));
 }
+
+fn first_center(e: &NoteEngine) -> f64 {
+    frame(e)["objects"][0]["draws"][0]["c"][0].as_f64().unwrap()
+}
+
+#[test]
+fn undo_redo_objects_params_and_drag() {
+    let e = NoteEngine::new(vec![]);
+    e.load_plugin(MOHR.into()).unwrap();
+    assert!(!e.can_undo());
+    e.add_object("m".into(), "mohr-circle".into(), r#"{"sx":80,"sy":-40,"txy":30}"#.into(), 0.0, 0.0).unwrap();
+    e.set_param("m".into(), "sx".into(), "0".into()).unwrap();
+    assert_eq!(first_center(&e), -20.0);
+
+    assert!(e.undo()); // 값 변경 취소
+    assert_eq!(first_center(&e), 20.0);
+    assert!(e.can_redo());
+    assert!(e.redo());
+    assert_eq!(first_center(&e), -20.0);
+
+    // 드래그: 시작 때 checkpoint 한 번, 이동은 여러 번 → undo 한 번에 원위치
+    e.checkpoint();
+    for x in [1.0, 2.0, 3.0, 4.0] {
+        e.move_object("m".into(), x, 0.0).unwrap();
+    }
+    assert_eq!(first_center(&e), -16.0);
+    assert!(e.undo());
+    assert_eq!(first_center(&e), -20.0);
+
+    // 삭제와 추가도 되돌린다
+    assert!(e.remove_object("m".into()));
+    assert_eq!(frame(&e)["objects"].as_array().unwrap().len(), 0);
+    assert!(e.undo());
+    assert_eq!(frame(&e)["objects"].as_array().unwrap().len(), 1);
+
+    // 새 변경은 redo 를 무효화한다
+    assert!(e.undo()); // set_param 취소
+    e.set_param("m".into(), "txy".into(), "10".into()).unwrap();
+    assert!(!e.can_redo());
+    assert!(!e.redo());
+}
+
+#[test]
+fn undo_history_is_cleared_on_load_and_bounded() {
+    let e = NoteEngine::new(vec![]);
+    e.load_plugin(MOHR.into()).unwrap();
+    e.add_object("m".into(), "mohr-circle".into(), "{}".into(), 0.0, 0.0).unwrap();
+    let saved = e.document_json().unwrap();
+    for i in 0..150 {
+        e.set_param("m".into(), "sx".into(), format!("{i}")).unwrap();
+    }
+    let mut n = 0;
+    while e.undo() {
+        n += 1;
+    }
+    assert_eq!(n, 100, "되돌리기 기록은 100개까지");
+    e.load_document(saved).unwrap();
+    assert!(!e.can_undo() && !e.can_redo());
+}

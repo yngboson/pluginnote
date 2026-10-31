@@ -66,6 +66,7 @@ struct CanvasView: View {
                     // 선택: 가장 가까운 스냅/그림 점 근처
                     dragging = pick(at: v.startLocation, size: size)
                     store.selection = dragging
+                    if dragging != nil { store.checkpoint() }   // 드래그 한 번 = 되돌리기 한 번
                     if dragging == nil { panStart = xf.offset }
                 }
                 if let id = dragging { store.move(id, to: CGPoint(x: w.x, y: w.y)) }

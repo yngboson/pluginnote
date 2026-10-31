@@ -89,6 +89,13 @@ final class EngineStore: ObservableObject {
         do { try engine.setParam(id: id, key: key, valueJson: json); refresh(); return true } catch { lastError = "\(error)"; return false }
     }
 
+    // MARK: 되돌리기 (객체/값/연결 변경은 코어 기록, 잉크 화면은 PencilKit 자체 undo)
+    var canUndo: Bool { engine.canUndo() }
+    var canRedo: Bool { engine.canRedo() }
+    func checkpoint() { engine.checkpoint() }
+    func undo() { if engine.undo() { selection = nil; pendingIds.removeAll(); refresh() } }
+    func redo() { if engine.redo() { selection = nil; pendingIds.removeAll(); refresh() } }
+
     func move(_ id: String, to p: CGPoint) {
         do { try engine.moveObject(id: id, x: p.x, y: p.y); refresh() } catch { lastError = "\(error)" }
     }

@@ -20,6 +20,12 @@ struct ContentView: View {
                             ForEach(CanvasView.Mode.allCases) { Text($0.rawValue).tag($0) }
                         }.pickerStyle(.segmented).frame(width: 180)
                     }
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button { store.undo() } label: { Label("되돌리기", systemImage: "arrow.uturn.backward") }
+                            .disabled(!store.canUndo)
+                        Button { store.redo() } label: { Label("다시하기", systemImage: "arrow.uturn.forward") }
+                            .disabled(!store.canRedo)
+                    }
                     ToolbarItemGroup(placement: .primaryAction) {
                         Button { showLibrary = true } label: { Label("플러그인", systemImage: "puzzlepiece.extension") }
                         Button { showOpen = true } label: { Label("열기", systemImage: "folder") }
