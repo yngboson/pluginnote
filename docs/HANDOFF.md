@@ -20,6 +20,7 @@ Rust 백엔드(코어/플러그인 호스트/레지스트리/FFI/CLI)는 CI(ubun
 2. 백엔드 회귀 확인: `cargo test --workspace` (38개 이상 통과해야 정상)
 3. iOS 빌드: `ios/build-ios.sh` (macOS 전용). **실패하면 에러를 읽고 고친다.** 아래 "이미 겪은 문제"를 먼저 본다.
 4. `cd ios && xcodegen` 으로 프로젝트 생성 → `xcodebuild build -project PluginNote.xcodeproj -scheme PluginNote -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`
+   (2026-11-01 Mac 로컬에서 3~5단계 완료: 빌드 스크립트의 `Generated/` 폴더 누락만 고쳤고 Swift 는 무수정 통과. 6단계 체크리스트가 남음)
 5. **Swift 컴파일 에러를 모두 고친다.** `ios/PluginNote/*.swift` 는 Linux 에서 컴파일해 본 적이 없다. 생성 바인딩(`ios/PluginNote/Generated/note_ffi.swift`)의 실제 API 이름과 어긋난 곳이 있을 수 있다.
 6. iPad 시뮬레이터에서 실행해 아래 "수동 확인 체크리스트"를 통과시킨다.
 7. 고친 것을 커밋·푸시하고, 이 문서와 `docs/PLAN.md` 의 "미검증" 표기를 실제 상태로 갱신한다. (CI `ios` job 도 통과하는지 확인)

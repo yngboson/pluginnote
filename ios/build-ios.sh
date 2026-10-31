@@ -41,5 +41,6 @@ xcodebuild -create-xcframework \
   -library target/ios-sim/libnote_ffi.a -headers "$hdr" \
   -output ios/NoteFFI.xcframework
 
+mkdir -p ios/PluginNote/Generated
 cp target/bindings/swift/note_ffi.swift ios/PluginNote/Generated/note_ffi.swift
 echo "완료: ios/NoteFFI.xcframework, ios/PluginNote/Generated/note_ffi.swift"
