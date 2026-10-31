@@ -67,9 +67,9 @@ docs/                 PLAN.md(결정/계획), PLUGIN_API.md(API v0.1), 이 문�
 | 번들 플러그인 `pluginnote check` | CI 통과 |
 | Swift/Kotlin 바인딩 생성 | CI 통과 (`scripts/gen-bindings.sh`) |
 | 해석해 대조 (SFD/BMD, 모어원) | 테스트로 고정됨 |
-| `ios/build-ios.sh` (iOS Rust 빌드) | **미검증** (두 번 실패 후 수정, 결과 못 봄) |
-| Swift 앱 컴파일 | **미검증** (한 번도 컴파일 안 됨) |
-| 시뮬레이터/실기기 실행 | **미검증** |
+| `ios/build-ios.sh` (iOS Rust 빌드) | Mac 로컬 통과 (2026-11-01). CI ios job 은 미확인 |
+| Swift 앱 컴파일 | Mac 로컬 `xcodebuild` BUILD SUCCEEDED (Xcode 26.3, Swift 무수정) |
+| 시뮬레이터 기동 | iPad Pro 13 (iOS 26.3)에서 빈 캔버스·툴바·속성 패널 표시 확인. 아래 체크리스트 기능은 **미검증**, 실기기도 미실시 |
 | 필기 지연 측정 | 미실시. 기기별 목표(ms)는 실기기에서 정한다 |
 
 ## 수동 확인 체크리스트 (시뮬레이터)
