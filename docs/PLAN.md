@@ -51,9 +51,10 @@
 - [x] 문서: `docs/PLUGIN_API.md`
 
 ### 남은 일 (이 환경에서 할 수 없거나 사용자 결정 필요)
-1. **iPad 앱 (Swift/Metal/PencilKit):** macOS/Xcode 와 실기기 필요. `note-ffi` 의 `NoteEngine` 이 UI 가 호출할 전체 표면이다.
+1. **iPad 앱 (`ios/`, SwiftUI + PencilKit):** 소스 작성됨(캔버스, 인스펙터 숫자 입력, 플러그인 검색, 붙여넣기 import, 저장 공유). **컴파일/실행은 아직 미검증** — CI `ios` job(macos-14)과 실기기 확인 필요
+   - v0 한계: 잉크는 화면 좌표 고정(줌/팬에 안 따라감), 지우개/undo 미동기화, 하중 목록 같은 배열 파라미터 편집 UI 없음, 문서 열기(불러오기) UI 없음
    - 필기 지연 측정 기준(기기별 목표 ms)은 실기기 확보 후 확정
-2. **iOS 정적 라이브러리/xcframework 빌드:** macOS 에서 `cargo build --target aarch64-apple-ios`
+2. **iOS 정적 라이브러리/xcframework 빌드:** `ios/build-ios.sh` (macOS 전용) 작성됨, 미검증
 3. **공유 레포 원격 운영:** 현재는 디렉터리 기반(그대로 Git 레포로 올릴 수 있는 구조). 서버/계정/신고·긴급 차단은 운영 주체 결정 후
 4. **시맨틱 검색:** `Ranker` 트레이트로 교체 지점만 마련. 임베딩 모델/서비스 선택 필요
 5. **API 동결(v1.0) 게이트:** 드래그 핸들 훅, 속성 편집 UI 스키마 확정 후. 3순위 분야 플러그인(열유체/제어/전기/기구학)은 유저 기여로

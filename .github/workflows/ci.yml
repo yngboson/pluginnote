@@ -14,3 +14,17 @@ jobs:
         run: cargo run -q -p note-cli -- check plugins/*/plugin.js plugins/*/plugin.json
       - name: 바인딩 생성 확인
         run: scripts/gen-bindings.sh
+  ios:
+    # iPad 앱 컴파일 검증: Rust → xcframework → XcodeGen → xcodebuild (시뮬레이터)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: brew install xcodegen
+      - run: ios/build-ios.sh
+      - run: cd ios && xcodegen
+      - run: |
+          cd ios
+          xcodebuild build -project PluginNote.xcodeproj -scheme PluginNote \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO

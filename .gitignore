@@ -1,2 +1,6 @@
 /target
 *.svg.out
+
+/ios/NoteFFI.xcframework
+/ios/PluginNote.xcodeproj
+/ios/PluginNote/Generated/
